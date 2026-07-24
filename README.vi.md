@@ -31,7 +31,7 @@ flowchart LR
     S --> D["Date + weather dimensions"]
     F --> M["Hourly, weather, congestion marts"]
     D --> M
-    M --> T["15 dbt tests + evidence"]
+    M --> T["15 dbt tests + log task Airflow"]
     C --> O["Audit, watermark, metrics"]
     AF["Airflow"] --> B
 ```
@@ -68,5 +68,33 @@ docker compose up -d airflow airflow-scheduler metabase
 make incremental
 make backfill START="2018-01-01 00:00:00" END="2018-01-31 23:00:00"
 ```
+
+## Minh chứng chạy thực tế
+
+Các ảnh dưới đây được chụp trực tiếp từ giao diện Airflow 2.10.5 đang chạy tại
+`localhost:8084`, không phải sơ đồ hoặc giao diện dựng lại.
+
+**Graph View của một run thành công.** Toàn bộ task đều màu xanh, từ
+tải dữ liệu, nạp raw, `dbt_run`, `dbt_test` đến tạo dashboard và xuất artifact
+quan sát hệ thống.
+
+![Ảnh chụp Graph View thật của DAG traffic_data_warehouse chạy thành công](docs/images/airflow-ui.png)
+
+**Log thật của task `dbt_test` trong Airflow.** Ảnh thể hiện lệnh dbt được thực
+thi trong container, phiên bản dbt 1.9.10, PostgreSQL adapter và từng test đạt
+trạng thái PASS.
+
+![Ảnh chụp log thật của task dbt_test với lệnh dbt và các kết quả PASS](docs/images/dbt-airflow-log.png)
+
+**Phần kết thúc của cùng log task.** Airflow ghi nhận `PASS=15`, không warning,
+không error, mã thoát 0 và task hoàn thành thành công.
+
+![Ảnh chụp phần tổng kết log dbt_test trong Airflow](docs/images/dbt-airflow-summary.png)
+
+**Kết quả phân tích trong warehouse.** Ảnh dưới được
+`src/render_dashboard.py` tạo từ các mart PostgreSQL sau khi pipeline kết thúc;
+đây là data artifact, không phải ảnh chụp giao diện Airflow.
+
+![Artifact phân tích giao thông được tạo từ các mart PostgreSQL](docs/images/dashboard.png)
 
 Nguồn: [UCI Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). Tệp dữ liệu được tải lúc chạy và không commit lên Git.
