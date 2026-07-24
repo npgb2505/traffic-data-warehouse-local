@@ -1,0 +1,4 @@
+dbt-postgres==1.9.0
+pandas==2.1.4
+psycopg[binary]==3.2.6
+pytest==8.3.5

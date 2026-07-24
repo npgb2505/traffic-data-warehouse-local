@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+airflow/
+artifacts/*.json
+artifacts/*.html
+traffic_dbt/target/
+traffic_dbt/logs/
+traffic_dbt/.user.yml
+*.log

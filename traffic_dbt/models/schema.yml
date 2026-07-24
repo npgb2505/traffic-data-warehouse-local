@@ -1,0 +1,42 @@
+version: 2
+
+models:
+  - name: stg_traffic_observations
+    description: Typed and standardized traffic observations.
+    columns:
+      - name: observation_id
+        tests: [not_null, unique]
+      - name: location_id
+        tests: [not_null]
+      - name: traffic_state
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["congested", "slow", "free_flow"]
+
+  - name: dim_location
+    columns:
+      - name: location_id
+        tests: [not_null, unique]
+
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [not_null, unique]
+
+  - name: fct_traffic_observation
+    columns:
+      - name: observation_id
+        tests: [not_null, unique]
+      - name: location_id
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: location_id
+      - name: observation_date
+        tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key

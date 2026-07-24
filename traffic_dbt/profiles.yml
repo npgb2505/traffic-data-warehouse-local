@@ -1,0 +1,13 @@
+traffic_dbt:
+  target: local
+  outputs:
+    local:
+      type: postgres
+      host: "{{ env_var('TRAFFIC_DB_HOST', 'localhost') }}"
+      port: "{{ env_var('TRAFFIC_DB_PORT', '5544') | int }}"
+      user: "{{ env_var('TRAFFIC_DB_USER', 'traffic') }}"
+      password: "{{ env_var('TRAFFIC_DB_PASSWORD', 'traffic') }}"
+      dbname: "{{ env_var('TRAFFIC_DB_NAME', 'traffic') }}"
+      schema: public
+      threads: 4
+
