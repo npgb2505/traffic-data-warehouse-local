@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="320" viewBox="0 0 1200 320" role="img" aria-labelledby="title desc">
+  <title id="title">Metro Interstate Traffic Data Warehouse</title>
+  <desc id="desc">A dark green and amber road and weather warehouse illustration.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#071b1a"/>
+      <stop offset="1" stop-color="#123f3c"/>
+    </linearGradient>
+    <linearGradient id="road" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#345853"/>
+      <stop offset="1" stop-color="#142b29"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="12" stdDeviation="13" flood-color="#020b0a" flood-opacity=".55"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="320" rx="24" fill="url(#bg)"/>
+  <circle cx="1100" cy="20" r="170" fill="#38d9a9" opacity=".07"/>
+  <path d="M0 274 C245 235 406 313 630 276 S980 226 1200 265 V320 H0Z" fill="#38d9a9" opacity=".05"/>
+
+  <g font-family="Inter,Segoe UI,Arial,sans-serif">
+    <rect x="58" y="46" width="186" height="30" rx="15" fill="#38d9a9" opacity=".14"/>
+    <text x="77" y="67" font-size="13" font-weight="750" letter-spacing="1.35" fill="#79edcb">ANALYTICS WAREHOUSE</text>
+    <text x="58" y="137" font-size="50" font-weight="750" fill="#f0fffb">Metro Traffic Lakehouse</text>
+    <text x="58" y="179" font-size="24" font-weight="500" fill="#aad8ce">Incremental dbt models for traffic × weather analysis</text>
+    <g font-size="15" fill="#bad8d1">
+      <text x="58" y="230">48,204 observations</text>
+      <circle cx="224" cy="225" r="3" fill="#38d9a9"/>
+      <text x="239" y="230">15 data tests</text>
+      <circle cx="353" cy="225" r="3" fill="#ffb547"/>
+      <text x="368" y="230">7 analytical models</text>
+    </g>
+    <rect x="58" y="258" width="355" height="4" rx="2" fill="#38d9a9"/>
+    <rect x="413" y="258" width="68" height="4" rx="2" fill="#ffb547"/>
+  </g>
+
+  <g transform="translate(755 22)" filter="url(#shadow)">
+    <path d="M116 284 L189 20 H301 L374 284Z" fill="url(#road)" stroke="#4e706b" stroke-width="2"/>
+    <path d="M240 35 V77 M240 103 V145 M240 171 V213 M240 239 V276" stroke="#ffcf70" stroke-width="8" stroke-linecap="round"/>
+    <g>
+      <rect x="122" y="196" width="52" height="30" rx="8" fill="#38d9a9"/>
+      <circle cx="134" cy="226" r="7" fill="#0b201e"/>
+      <circle cx="162" cy="226" r="7" fill="#0b201e"/>
+      <rect x="306" y="111" width="55" height="32" rx="8" fill="#ffb547"/>
+      <circle cx="319" cy="143" r="7" fill="#0b201e"/>
+      <circle cx="348" cy="143" r="7" fill="#0b201e"/>
+    </g>
+    <g transform="translate(4 35)">
+      <circle cx="58" cy="30" r="25" fill="#ffb547"/>
+      <path d="M27 76 C30 58 47 52 60 59 C70 43 98 47 101 68 C117 68 123 78 120 90 H24 C18 84 20 77 27 76Z" fill="#d8f3ec"/>
+      <path d="M40 105 l-8 16 M68 105 l-8 16 M96 105 l-8 16" stroke="#55b7d1" stroke-width="5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(366 185)">
+      <ellipse cx="38" cy="14" rx="38" ry="14" fill="#38d9a9"/>
+      <path d="M0 14 V68 C0 76 17 82 38 82 S76 76 76 68 V14" fill="#1f8872"/>
+      <ellipse cx="38" cy="41" rx="38" ry="14" fill="#38d9a9"/>
+      <ellipse cx="38" cy="68" rx="38" ry="14" fill="#38d9a9"/>
+      <text x="38" y="46" text-anchor="middle" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="13" font-weight="800" fill="#06211d">dbt</text>
+    </g>
+  </g>
+</svg>

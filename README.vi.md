@@ -1,100 +1,131 @@
+<p align="center">
+  <img src="docs/readme-header.svg" alt="Metro Traffic Lakehouse — dbt incremental cho phân tích giao thông và thời tiết" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml"><img src="https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  · <a href="README.md">English</a>
+  · <a href="docs/architecture.excalidraw">Sơ đồ chỉnh sửa được</a>
+</p>
+
 # Kho dữ liệu giao thông Metro Interstate
 
-Dự án xây dựng kho dữ liệu hoàn chỉnh từ bộ **UCI Metro Interstate Traffic Volume**. Airflow tải và kiểm tra dữ liệu nguồn, PostgreSQL lưu raw layer có tính idempotent, còn dbt tạo và kiểm thử fact incremental, dimensions và các mart về lưu lượng–thời tiết.
+Đây là dự án tập trung vào **warehouse và analytics engineering**. Airflow chịu trách nhiệm ingestion, PostgreSQL lưu raw layer có thể tái lập, còn dbt quản lý lineage, biến đổi incremental và hợp đồng phân tích có kiểm thử. Lưu lượng giao thông chỉ thực sự có ý nghĩa khi được đặt trong bối cảnh thời gian và thời tiết.
 
-> Chỉ cần Docker và dữ liệu công khai, không cần tài khoản cloud hay dịch vụ trả phí.
-
-## Kết quả chạy toàn bộ dữ liệu
-
-| Chỉ số | Kết quả |
-|---|---:|
-| Dòng nguồn / hợp lệ | 48.204 / 48.204 |
-| Dòng bị loại | 0 |
-| Khoảng thời gian | 02/10/2012–30/09/2018 |
-| Lưu lượng trung bình | 3.260 xe/giờ |
-| Tỷ lệ lưu lượng cao | 43,4% |
-| Full dbt build | 22/22 model và test đạt |
-| Raw incremental | 27 dòng |
-| dbt incremental merge | 27 dòng |
-| Dòng fact sau chạy lại | 48.204 |
-
-## Kiến trúc
+## Bắt đầu từ lineage
 
 ```mermaid
-flowchart LR
-    A["UCI ZIP / CSV.GZ"] --> B["Tải nguyên tử + SHA-256"]
-    B --> C["Kiểm tra contract và đo lường"]
-    C --> R["PostgreSQL raw layer"]
-    C --> Q["Quarantine theo batch"]
-    R --> S["dbt staging"]
-    S --> F["Fact incremental"]
-    S --> D["Date + weather dimensions"]
-    F --> M["Hourly, weather, congestion marts"]
-    D --> M
-    M --> T["15 dbt tests + log task Airflow"]
-    C --> O["Audit, watermark, metrics"]
-    AF["Airflow"] --> B
+flowchart TB
+    subgraph INGEST["01 · INGESTION"]
+      A["UCI CSV.GZ"] --> B["Kiểm tra contract"]
+      B --> R["raw.traffic_observations"]
+      B --> Q["Quarantine"]
+    end
+    subgraph MODEL["02 · DBT TRANSFORMATION"]
+      R --> S["stg_traffic_observations"]
+      S --> F["fct_traffic_observation<br/>incremental delete+insert"]
+      S --> DD["dim_date"]
+      S --> DW["dim_weather"]
+    end
+    subgraph SERVE["03 · ANALYTICS"]
+      F --> H["mart_hourly_patterns"]
+      F --> W["mart_weather_impact"]
+      F --> C["mart_congestion_profile"]
+      DD --> H
+      DW --> W
+    end
+    subgraph ASSURE["04 · QUALITY"]
+      H --> T["15 dbt tests"]
+      W --> T
+      C --> T
+    end
+    AF["Airflow LocalExecutor"] -. điều phối .-> INGEST
 ```
 
-Bản Excalidraw có thể chỉnh sửa: [docs/architecture.excalidraw](docs/architecture.excalidraw)
+## Bản đồ dbt project
 
-## Điểm kỹ thuật chính
+```text
+traffic_dbt/models
+├── staging
+│   └── stg_traffic_observations.sql
+└── analytics
+    ├── dim_date.sql
+    ├── dim_weather.sql
+    ├── fct_traffic_observation.sql      # incremental
+    ├── mart_hourly_patterns.sql
+    ├── mart_weather_impact.sql
+    └── mart_congestion_profile.sql
+```
 
-- Tải toàn bộ dữ liệu UCI, lưu checksum và manifest nguồn.
-- Full refresh, incremental theo watermark từng giờ, lookback và backfill.
-- Dùng PostgreSQL `COPY` vào staging tạm rồi upsert an toàn.
-- Quality gate cho thời gian, thời tiết, nhiệt độ, mưa, tuyết, mây, lưu lượng và tính duy nhất.
-- Fact dbt incremental theo chiến lược `delete+insert`.
-- 15 dbt tests: unique, not-null, accepted values và quan hệ khóa.
-- dbt nằm trong virtualenv riêng để không xung đột dependency với Airflow.
-- Airflow tách metadata PostgreSQL, scheduler và webserver.
+## Hợp đồng phân tích có kiểm thử
 
-## Các model
+| Layer | Hợp đồng |
+|---|---|
+| Raw | Timestamp hợp lệ, miền thời tiết đúng, lưu lượng không âm |
+| Staging | Observation ID duy nhất, measure đúng kiểu, traffic state được suy ra |
+| Dimensions | Khóa ngày và thời tiết unique, not-null |
+| Fact | Đảm bảo quan hệ khóa đến hai dimensions |
+| Marts | Kết quả tổng hợp tái lập sau incremental merge |
 
-`stg_traffic_observations`, `dim_date`, `dim_weather`, `fct_traffic_observation`, `mart_hourly_patterns`, `mart_weather_impact`, `mart_congestion_profile`.
+**Trạng thái đã kiểm chứng:** 48.204 quan sát hợp lệ · 0 dòng bị loại · dữ liệu từ 02/10/2012 đến 30/09/2018 · trung bình 3.260 xe/giờ · 43,4% quan sát thuộc nhóm lưu lượng cao.
 
-## Cách chạy
+## Minh chứng kiểm thử dbt
+
+Khác hai dự án còn lại, bằng chứng trung tâm ở đây là hợp đồng transformation. Các ảnh được chụp trực tiếp từ task Airflow chạy dbt 1.9.10.
+
+### 1. Toàn bộ lineage hoàn thành
+
+Cả sáu task đều xanh, bao gồm `dbt_run` và `dbt_test`.
+
+![Airflow Graph View thật của traffic_data_warehouse](docs/images/airflow-ui.png)
+
+### 2. Từng dbt test đều đạt
+
+![Log dbt_test thật với từng kết quả PASS](docs/images/dbt-airflow-log.png)
+
+### 3. Test suite kết thúc không có lỗi
+
+`PASS=15 · WARN=0 · ERROR=0 · SKIP=0 · TOTAL=15 · return code 0`
+
+![Phần tổng kết log dbt_test thật](docs/images/dbt-airflow-summary.png)
+
+## Các mart cho biết điều gì?
+
+Artifact dưới đây được dựng từ các mart PostgreSQL, không phải ảnh giao diện Airflow.
+
+![Artifact phân tích giao thông và thời tiết](docs/images/dashboard.png)
+
+<details>
+<summary><strong>Vận hành trên máy cá nhân</strong></summary>
+
+### Khởi động và nạp full
 
 ```bash
 make full
 docker compose up -d airflow airflow-scheduler metabase
 ```
 
-- Airflow: <http://localhost:8084> — `airflow` / `airflow`
-- PostgreSQL: `localhost:5544` — database/user/password: `traffic`
-- Metabase: <http://localhost:3004>
+### Incremental và backfill có giới hạn
 
 ```bash
 make incremental
 make backfill START="2018-01-01 00:00:00" END="2018-01-31 23:00:00"
 ```
 
-## Minh chứng chạy thực tế
+### Kiểm thử
 
-Các ảnh dưới đây được chụp trực tiếp từ giao diện Airflow 2.10.5 đang chạy tại
-`localhost:8084`, không phải sơ đồ hoặc giao diện dựng lại.
+```bash
+make test
+docker compose run --rm airflow airflow dags test traffic_data_warehouse 2026-07-26
+```
 
-**Graph View của một run thành công.** Toàn bộ task đều màu xanh, từ
-tải dữ liệu, nạp raw, `dbt_run`, `dbt_test` đến tạo dashboard và xuất artifact
-quan sát hệ thống.
+| Dịch vụ | Địa chỉ |
+|---|---|
+| Airflow | <http://localhost:8084> — `airflow / airflow` |
+| PostgreSQL | `localhost:5544` — database/user/password: `traffic` |
+| Metabase | <http://localhost:3004> |
+</details>
 
-![Ảnh chụp Graph View thật của DAG traffic_data_warehouse chạy thành công](docs/images/airflow-ui.png)
+## Nguồn dữ liệu
 
-**Log thật của task `dbt_test` trong Airflow.** Ảnh thể hiện lệnh dbt được thực
-thi trong container, phiên bản dbt 1.9.10, PostgreSQL adapter và từng test đạt
-trạng thái PASS.
-
-![Ảnh chụp log thật của task dbt_test với lệnh dbt và các kết quả PASS](docs/images/dbt-airflow-log.png)
-
-**Phần kết thúc của cùng log task.** Airflow ghi nhận `PASS=15`, không warning,
-không error, mã thoát 0 và task hoàn thành thành công.
-
-![Ảnh chụp phần tổng kết log dbt_test trong Airflow](docs/images/dbt-airflow-summary.png)
-
-**Kết quả phân tích trong warehouse.** Ảnh dưới được
-`src/render_dashboard.py` tạo từ các mart PostgreSQL sau khi pipeline kết thúc;
-đây là data artifact, không phải ảnh chụp giao diện Airflow.
-
-![Artifact phân tích giao thông được tạo từ các mart PostgreSQL](docs/images/dashboard.png)
-
-Nguồn: [UCI Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). Tệp dữ liệu được tải lúc chạy và không commit lên Git.
+[UCI Machine Learning Repository — Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). Dữ liệu được tải lúc chạy và không được commit.

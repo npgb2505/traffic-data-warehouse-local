@@ -1,126 +1,131 @@
+<p align="center">
+  <img src="docs/readme-header.svg" alt="Metro Traffic Lakehouse — incremental dbt models for traffic and weather analysis" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml"><img src="https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  · <a href="README.vi.md">Tiếng Việt</a>
+  · <a href="docs/architecture.excalidraw">Editable architecture</a>
+</p>
+
 # Metro Interstate Traffic Data Warehouse
 
-[![CI](https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml/badge.svg)](https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml)
+This repository is a **warehouse and analytics engineering project**. Airflow owns ingestion; PostgreSQL holds the reproducible raw layer; dbt owns lineage, incremental transformations and testable analytical contracts. Traffic volume becomes useful only after it is joined to time and weather context.
 
-A complete local warehouse built from the public **UCI Metro Interstate Traffic Volume** dataset. Airflow downloads and validates the source, PostgreSQL stores an idempotent raw layer, and dbt builds and tests incremental facts, dimensions, and traffic/weather marts.
-
-> The project uses public data and Docker only. No Azure, AWS, GCP, or paid SaaS account is required.
-
-## Verified full-data run
-
-| Metric | Result |
-|---|---:|
-| Source / accepted rows | 48,204 / 48,204 |
-| Rejected rows | 0 |
-| Coverage | 2012-10-02 to 2018-09-30 |
-| Average traffic volume | 3,260 vehicles/hour |
-| Heavy-traffic observations | 43.4% |
-| dbt build | 22/22 models and tests passed |
-| Incremental raw lookback | 27 rows |
-| Incremental dbt merge | 27 rows |
-| Fact rows after rerun | 48,204 |
-
-## Architecture
+## Lineage first
 
 ```mermaid
-flowchart LR
-    A["UCI ZIP / CSV.GZ"] --> B["Atomic download + SHA-256 manifest"]
-    B --> C["Contract and measurement quality gate"]
-    C --> R["PostgreSQL raw layer"]
-    C --> Q["Batch quarantine"]
-    R --> S["dbt staging view"]
-    S --> F["Incremental traffic fact"]
-    S --> D["Date + weather dimensions"]
-    F --> M["Hourly, weather and congestion marts"]
-    D --> M
-    M --> T["15 dbt data tests + Airflow task logs"]
-    C --> O["Run audit, watermark and metrics"]
-    AF["Airflow LocalExecutor"] --> B
+flowchart TB
+    subgraph INGEST["01 · INGESTION"]
+      A["UCI CSV.GZ"] --> B["Contract validation"]
+      B --> R["raw.traffic_observations"]
+      B --> Q["Quarantine"]
+    end
+    subgraph MODEL["02 · DBT TRANSFORMATION"]
+      R --> S["stg_traffic_observations"]
+      S --> F["fct_traffic_observation<br/>incremental delete+insert"]
+      S --> DD["dim_date"]
+      S --> DW["dim_weather"]
+    end
+    subgraph SERVE["03 · ANALYTICS"]
+      F --> H["mart_hourly_patterns"]
+      F --> W["mart_weather_impact"]
+      F --> C["mart_congestion_profile"]
+      DD --> H
+      DW --> W
+    end
+    subgraph ASSURE["04 · QUALITY"]
+      H --> T["15 dbt tests"]
+      W --> T
+      C --> T
+    end
+    AF["Airflow LocalExecutor"] -. orchestrates .-> INGEST
 ```
 
-Editable source: [docs/architecture.excalidraw](docs/architecture.excalidraw)
+## dbt project map
 
-## Production-style behavior
+```text
+traffic_dbt/models
+├── staging
+│   └── stg_traffic_observations.sql
+└── analytics
+    ├── dim_date.sql
+    ├── dim_weather.sql
+    ├── fct_traffic_observation.sql      # incremental
+    ├── mart_hourly_patterns.sql
+    ├── mart_weather_impact.sql
+    └── mart_congestion_profile.sql
+```
 
-- Complete UCI dataset with checksum, manifest, and cached source retrieval.
-- Full refresh, watermark-based hourly incremental loads, lookback, and bounded backfills.
-- `COPY` into a temporary staging table followed by conflict-safe upserts.
-- Quality gates for timestamps, weather fields, temperature, rain, snow, clouds, volume, rejection rate, and uniqueness.
-- Incremental dbt fact table using `delete+insert`; dimensions and marts remain reproducible.
-- 15 dbt tests covering uniqueness, non-null values, accepted values, and referential integrity.
-- dbt runs in an isolated virtual environment so its dependencies cannot break Airflow.
-- Separate Airflow metadata database, webserver, and scheduler.
+## Tested analytical contract
 
-## dbt models
+| Layer | Contract |
+|---|---|
+| Raw | Valid timestamp, weather ranges, non-negative traffic volume |
+| Staging | Unique observation ID, typed measures, derived traffic state |
+| Dimensions | Unique and non-null date/weather keys |
+| Fact | Referential integrity to both dimensions |
+| Marts | Reproducible aggregations after incremental merges |
 
-- `staging.stg_traffic_observations`
-- `analytics.dim_date`
-- `analytics.dim_weather`
-- `analytics.fct_traffic_observation`
-- `analytics.mart_hourly_patterns`
-- `analytics.mart_weather_impact`
-- `analytics.mart_congestion_profile`
+**Verified state:** 48,204 accepted observations · 0 rejected · coverage from 2012-10-02 to 2018-09-30 · 3,260 vehicles/hour average · 43.4% heavy-traffic observations.
 
-## Run locally
+## dbt test evidence
+
+Unlike the other two projects, the central proof here is the transformation contract. These images come directly from the Airflow task that executed dbt 1.9.10.
+
+### 1. DAG lineage completed
+
+All six tasks are green, including `dbt_run` and `dbt_test`.
+
+![Real Airflow Graph view for traffic_data_warehouse](docs/images/airflow-ui.png)
+
+### 2. Individual dbt tests passed
+
+![Real dbt_test task log showing individual PASS results](docs/images/dbt-airflow-log.png)
+
+### 3. Test suite closed with zero errors
+
+`PASS=15 · WARN=0 · ERROR=0 · SKIP=0 · TOTAL=15 · return code 0`
+
+![Real dbt_test completion log](docs/images/dbt-airflow-summary.png)
+
+## What the marts reveal
+
+The artifact below is rendered from PostgreSQL marts—not reconstructed from the Airflow UI.
+
+![Traffic and weather analytics artifact](docs/images/dashboard.png)
+
+<details>
+<summary><strong>Local operations</strong></summary>
+
+### Start and load
 
 ```bash
 make full
 docker compose up -d airflow airflow-scheduler metabase
 ```
 
-- Airflow: <http://localhost:8084> — `airflow` / `airflow`
-- PostgreSQL: `localhost:5544` — database/user/password: `traffic`
-- Metabase: <http://localhost:3004>
-
-Incremental run:
+### Incremental and bounded backfill
 
 ```bash
 make incremental
-```
-
-Backfill:
-
-```bash
 make backfill START="2018-01-01 00:00:00" END="2018-01-31 23:00:00"
 ```
 
-Validation:
+### Validate
 
 ```bash
 make test
 docker compose run --rm airflow airflow dags test traffic_data_warehouse 2026-07-26
 ```
 
-## Execution evidence
-
-The screenshots below come directly from the running Airflow 2.10.5 web UI at
-`localhost:8084`; they are not reconstructed diagrams.
-
-**Successful DAG run — Graph view.** Every task in the selected run is
-green, including raw ingestion, `dbt_run`, `dbt_test`, dashboard rendering, and
-observability publishing.
-
-![Real Airflow Graph view showing a successful traffic warehouse run](docs/images/airflow-ui.png)
-
-**Real `dbt_test` Airflow task log.** The log shows the command executed inside
-Airflow, dbt 1.9.10 with the PostgreSQL adapter, and the individual test PASS
-lines.
-
-![Real Airflow dbt_test task log showing the dbt command and PASS results](docs/images/dbt-airflow-log.png)
-
-**Completion of the same task log.** Airflow reports `PASS=15`, zero warnings,
-zero errors, exit code 0, and successful task completion.
-
-![Real Airflow dbt_test completion log](docs/images/dbt-airflow-summary.png)
-
-**Warehouse result.** The image below is generated by `src/render_dashboard.py`
-from PostgreSQL marts after the pipeline finishes. It is a data artifact, not a
-screenshot of the Airflow UI.
-
-![Traffic analytics artifact generated from PostgreSQL marts](docs/images/dashboard.png)
+| Service | Address |
+|---|---|
+| Airflow | <http://localhost:8084> — `airflow / airflow` |
+| PostgreSQL | `localhost:5544` — database/user/password: `traffic` |
+| Metabase | <http://localhost:3004> |
+</details>
 
 ## Data source
 
-[UCI Machine Learning Repository — Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). The data is downloaded at runtime and not committed.
-
-Vietnamese documentation: [README.vi.md](README.vi.md)
+[UCI Machine Learning Repository — Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). Source data is downloaded at runtime and excluded from Git.
