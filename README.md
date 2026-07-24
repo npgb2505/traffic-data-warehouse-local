@@ -1,115 +1,106 @@
-# Local Traffic Data Warehouse
+# Metro Interstate Traffic Data Warehouse
 
-[Bản tiếng Việt](README.vi.md)
+[![CI](https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml/badge.svg)](https://github.com/npgb2505/traffic-data-warehouse-local/actions/workflows/ci.yml)
 
-A fully local analytical warehouse for urban traffic observations in Da Nang:
+A complete local warehouse built from the public **UCI Metro Interstate Traffic Volume** dataset. Airflow downloads and validates the source, PostgreSQL stores an idempotent raw layer, and dbt builds and tests incremental facts, dimensions, and traffic/weather marts.
 
-`Traffic CSV → PostgreSQL raw layer → dbt staging → dimensional model → tested analytics marts → dashboard`
+> The project uses public data and Docker only. No Azure, AWS, GCP, or paid SaaS account is required.
 
-Airflow orchestrates the workflow, dbt owns transformations and tests, and every service runs through Docker Compose without a paid cloud account.
+## Verified full-data run
+
+| Metric | Result |
+|---|---:|
+| Source / accepted rows | 48,204 / 48,204 |
+| Rejected rows | 0 |
+| Coverage | 2012-10-02 to 2018-09-30 |
+| Average traffic volume | 3,260 vehicles/hour |
+| Heavy-traffic observations | 43.4% |
+| dbt build | 22/22 models and tests passed |
+| Incremental raw lookback | 27 rows |
+| Incremental dbt merge | 27 rows |
+| Fact rows after rerun | 48,204 |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    A[Traffic observation CSV] --> B[Python ingestion]
-    B --> C[(PostgreSQL raw)]
-    C --> D[dbt staging]
-    D --> E[Dimensions + fact]
-    E --> F[Hourly traffic mart]
-    E --> G[Congestion hotspot mart]
-    F --> H[Dashboard / Metabase]
-    G --> H
-    I[Apache Airflow] -. orchestrates and tests .-> B
+    A["UCI ZIP / CSV.GZ"] --> B["Atomic download + SHA-256 manifest"]
+    B --> C["Contract and measurement quality gate"]
+    C --> R["PostgreSQL raw layer"]
+    C --> Q["Batch quarantine"]
+    R --> S["dbt staging view"]
+    S --> F["Incremental traffic fact"]
+    S --> D["Date + weather dimensions"]
+    F --> M["Hourly, weather and congestion marts"]
+    D --> M
+    M --> T["15 dbt data tests + HTML evidence"]
+    C --> O["Run audit, watermark and metrics"]
+    AF["Airflow LocalExecutor"] --> B
 ```
 
-## Data model
+Editable source: [docs/architecture.excalidraw](docs/architecture.excalidraw)
 
-```mermaid
-erDiagram
-    DIM_LOCATION ||--o{ FCT_TRAFFIC_OBSERVATION : location_id
-    DIM_DATE ||--o{ FCT_TRAFFIC_OBSERVATION : observation_date
-    DIM_LOCATION {
-        text location_id PK
-        text location_name
-        text district
-        float latitude
-        float longitude
-    }
-    DIM_DATE {
-        date date_key PK
-        int month_number
-        int quarter_number
-        bool is_weekend
-    }
-    FCT_TRAFFIC_OBSERVATION {
-        text observation_id PK
-        timestamp observed_at
-        text location_id FK
-        date observation_date FK
-        text vehicle_type
-        float speed_kmh
-        text traffic_state
-    }
-```
+## Production-style behavior
 
-## Implemented features
+- Complete UCI dataset with checksum, manifest, and cached source retrieval.
+- Full refresh, watermark-based hourly incremental loads, lookback, and bounded backfills.
+- `COPY` into a temporary staging table followed by conflict-safe upserts.
+- Quality gates for timestamps, weather fields, temperature, rain, snow, clouds, volume, rejection rate, and uniqueness.
+- Incremental dbt fact table using `delete+insert`; dimensions and marts remain reproducible.
+- 15 dbt tests covering uniqueness, non-null values, accepted values, and referential integrity.
+- dbt runs in an isolated virtual environment so its dependencies cannot break Airflow.
+- Separate Airflow metadata database, webserver, and scheduler.
 
-- Deterministic 3,600-row traffic generator for six Da Nang locations.
-- Fail-fast source quality gate and idempotent raw ingestion.
-- dbt staging, dimensions, fact table and analytical marts.
-- dbt uniqueness, null, accepted-value and relationship tests.
-- Congestion classification and hotspot ranking.
-- Airflow DAG with one task per observable pipeline stage.
-- PostgreSQL, Airflow and Metabase in Docker Compose.
-- Dashboard generated from actual dbt marts.
+## dbt models
 
-## Quick start
+- `staging.stg_traffic_observations`
+- `analytics.dim_date`
+- `analytics.dim_weather`
+- `analytics.fct_traffic_observation`
+- `analytics.mart_hourly_patterns`
+- `analytics.mart_weather_impact`
+- `analytics.mart_congestion_profile`
+
+## Run locally
 
 ```bash
-docker compose build
-docker compose up -d warehouse
-docker compose run --rm airflow python /opt/project/src/generate_data.py
-docker compose run --rm airflow python /opt/project/src/load_raw.py
-docker compose run --rm airflow bash -lc "cd /opt/project/traffic_dbt && dbt run --profiles-dir . && dbt test --profiles-dir ."
-docker compose run --rm airflow python /opt/project/src/render_dashboard.py
+make full
+docker compose up -d airflow airflow-scheduler metabase
 ```
 
-Start the complete stack:
-
-```bash
-docker compose up -d
-```
-
-- Airflow: <http://localhost:8084>
+- Airflow: <http://localhost:8084> — `airflow` / `airflow`
+- PostgreSQL: `localhost:5544` — database/user/password: `traffic`
 - Metabase: <http://localhost:3004>
-- PostgreSQL: `localhost:5544`, database/user/password: `traffic`
 
-## Demo
-
-These screenshots are generated from an actual local run after all dbt tests pass.
-
-The verified run loaded 3,600 observations, built six dbt models and passed all 12 data tests. Airflow completed all five orchestration tasks successfully.
-
-![Airflow DAG success](docs/images/airflow-dag.png)
-
-![Traffic warehouse dashboard](docs/images/dashboard.png)
-
-![dbt test result](docs/images/dbt-tests.png)
-
-## Main marts
-
-| Model | Purpose |
-|---|---|
-| `analytics.mart_hourly_traffic` | Speed and congestion by hour/location |
-| `analytics.mart_congestion_hotspots` | Ranked monitored locations |
-| `analytics.fct_traffic_observation` | Clean observation-grain fact |
-
-## Verification
+Incremental run:
 
 ```bash
-python -m pytest -q
-cd traffic_dbt
-dbt run --profiles-dir .
-dbt test --profiles-dir .
+make incremental
 ```
+
+Backfill:
+
+```bash
+make backfill START="2018-01-01 00:00:00" END="2018-01-31 23:00:00"
+```
+
+Validation:
+
+```bash
+make test
+docker compose run --rm airflow airflow dags test traffic_data_warehouse 2026-07-26
+```
+
+## Execution evidence
+
+![Airflow DAG](docs/images/airflow-dag.png)
+
+![dbt tests](docs/images/dbt-tests.png)
+
+![Traffic dashboard](docs/images/dashboard.png)
+
+## Data source
+
+[UCI Machine Learning Repository — Metro Interstate Traffic Volume](https://archive.ics.uci.edu/dataset/492/metro+interstate+traffic+volume). The data is downloaded at runtime and not committed.
+
+Vietnamese documentation: [README.vi.md](README.vi.md)

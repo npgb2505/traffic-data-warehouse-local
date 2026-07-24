@@ -3,8 +3,15 @@
 __pycache__/
 .pytest_cache/
 airflow/
+data/landing/
+data/manifests/
+data/raw/*
+!data/raw/.gitkeep
+data/rejected/
 artifacts/*.json
 artifacts/*.html
+artifacts/*.prom
+artifacts/runs/
 traffic_dbt/target/
 traffic_dbt/logs/
 traffic_dbt/.user.yml

@@ -2,21 +2,24 @@ version: 2
 
 models:
   - name: stg_traffic_observations
-    description: Typed and standardized traffic observations.
+    description: Typed UCI Metro Interstate Traffic observations with derived analytical fields.
     columns:
       - name: observation_id
         tests: [not_null, unique]
-      - name: location_id
+      - name: observed_at
+        tests: [not_null]
+      - name: weather_key
+        tests: [not_null]
+      - name: traffic_volume
         tests: [not_null]
       - name: traffic_state
         tests:
           - accepted_values:
-              arguments:
-                values: ["congested", "slow", "free_flow"]
+              values: ["light", "moderate", "heavy"]
 
-  - name: dim_location
+  - name: dim_weather
     columns:
-      - name: location_id
+      - name: weather_key
         tests: [not_null, unique]
 
   - name: dim_date
@@ -25,18 +28,19 @@ models:
         tests: [not_null, unique]
 
   - name: fct_traffic_observation
+    description: Incremental observation-grain traffic fact table.
     columns:
       - name: observation_id
         tests: [not_null, unique]
-      - name: location_id
+      - name: weather_key
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_location')
-                field: location_id
+              to: ref('dim_weather')
+              field: weather_key
       - name: observation_date
         tests:
           - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_key
+              to: ref('dim_date')
+              field: date_key
+      - name: traffic_volume
+        tests: [not_null]

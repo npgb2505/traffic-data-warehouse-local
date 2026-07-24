@@ -1,0 +1,41 @@
+name: Full integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "57 2 * * 1"
+
+jobs:
+  full-data-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose up -d airflow-db warehouse
+      - run: docker compose build airflow airflow-init
+      - run: docker compose run --rm airflow-init
+      - run: docker compose run --rm airflow python /opt/project/src/download_data.py
+      - run: docker compose run --rm airflow python /opt/project/src/load_raw.py --full-refresh
+      - run: >
+          docker compose run --rm airflow bash -c
+          "cd /opt/project/traffic_dbt &&
+          /home/airflow/dbt-venv/bin/dbt build --full-refresh --profiles-dir ."
+      - run: |
+          python - <<'PY'
+          import json
+          result = json.load(open("artifacts/load_summary.json", encoding="utf-8"))
+          assert result["status"] == "success"
+          assert result["source_rows"] == 48204
+          assert result["warehouse_raw_rows"] == 48204
+          assert result["rejection_rate"] < 0.01
+          PY
+      - if: always()
+        run: docker compose logs --no-color warehouse > warehouse.log
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: traffic-full-run
+          path: |
+            artifacts/
+            traffic_dbt/target/run_results.json
+            warehouse.log
